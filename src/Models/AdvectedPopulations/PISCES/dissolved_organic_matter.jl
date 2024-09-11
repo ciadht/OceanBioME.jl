@@ -45,7 +45,8 @@ end
 end
 
 #Bacteria are responsible for carrying out biological remineralisation processes. They are represent in the following formulation, with biomass decreasing at depth.
-@inline bacterial_biomass(zₘₐₓ, z, Z, M) = ifelse(abs(z) <= zₘₐₓ, min(0.7*(Z + 2*M), 4), min(0.7*(Z + 2*M), 4)*(abs(zₘₐₓ/(z + eps(0.0)))^0.683))  #35b
+@inline bacterial_biomass(zₘₐₓ, z, Z, M) = 
+    ifelse(abs(z) <= zₘₐₓ, min(0.7 * (Z + 2M), 4), min(0.7 * (Z + 2M), 4) * (abs(zₘₐₓ/(z + eps(0.0))) ^ 0.683))  #35b
 
 #Bacterial activity parameterises remineralisation of DOC. It is dependent on nutrient availability, and remineraisation half saturation constant.
 @inline function bacterial_activity(DOC, PO₄, NO₃, NH₄, bFe, bgc)
@@ -92,7 +93,7 @@ end
 end
 
 #Forcing for DOC
-@inline function (bgc::PISCES)(::Val{:DOC}, x, y, z, t, P, D, Z, M, Pᶜʰˡ, Dᶜʰˡ, Pᶠᵉ, Dᶠᵉ, Dˢⁱ, DOC, POC, GOC, SFe, BFe, PSi, NO₃, NH₄, PO₄, Fe, Si, CaCO₃, DIC, Alk, O₂, T, zₘₓₗ, zₑᵤ, Si̅, D_dust, Ω, PAR, PAR₁, PAR₂, PAR₃)
+@inline function (bgc::PISCES)(::Val{:DOC}, x, y, z, t, P, D, Z, M, Pᶜʰˡ, Dᶜʰˡ, Pᶠᵉ, Dᶠᵉ, Dˢⁱ, DOC, POC, GOC, SFe, BFe, PSi, NO₃, NH₄, PO₄, Fe, Si, CaCO₃, DIC, Alk, O₂, T, zₘₓₗ, zₑᵤ, Si̅, D_dust, Ω, κ, PAR, PAR₁, PAR₂, PAR₃)
     γᶻ = bgc.excretion_as_DOM.Z
     γᴹ = bgc.excretion_as_DOM.M
     σᶻ = bgc.non_assimilated_fraction.Z
@@ -105,11 +106,10 @@ end
     αᴰ = bgc.initial_slope_of_PI_curve.D
     wₚₒ = bgc.sinking_speed_of_POC
 
-    ϕ₀ = bgc.latitude
-    L_day_param = bgc.length_of_day
-    ϕ = latitude(ϕ₀, y)
-    L_day = day_length(ϕ, t, L_day_param)
+    φ = bgc.latitude
+    φ = latitude(φ, y)
 
+    L_day = day_length(φ, t)
 
     g_FF = bgc.flux_feeding_rate
     w_GOCᵐⁱⁿ = bgc.min_sinking_speed_of_GOC
@@ -130,8 +130,8 @@ end
     Lₗᵢₘᴾ = P_nutrient_limitation(P, PO₄, NO₃, NH₄, Pᶜʰˡ, Pᶠᵉ, bgc)[1]
     Lₗᵢₘᴰ = D_nutrient_limitation(D, PO₄, NO₃, NH₄, Si, Dᶜʰˡ, Dᶠᵉ, Si̅, bgc)[1]
 
-    μᴾ = phytoplankton_growth_rate(P, Pᶜʰˡ, PARᴾ, L_day, T, αᴾ, Lₗᵢₘᴾ, zₘₓₗ, zₑᵤ, t_darkᴾ, bgc)
-    μᴰ = phytoplankton_growth_rate(D, Dᶜʰˡ, PARᴰ, L_day, T, αᴰ, Lₗᵢₘᴰ, zₘₓₗ, zₑᵤ, t_darkᴰ, bgc)
+    μᴾ = phytoplankton_growth_rate(P, Pᶜʰˡ, PARᴾ, L_day, T, αᴾ, Lₗᵢₘᴾ, zₘₓₗ, zₑᵤ, κ, t_darkᴾ, bgc)
+    μᴰ = phytoplankton_growth_rate(D, Dᶜʰˡ, PARᴰ, L_day, T, αᴰ, Lₗᵢₘᴰ, zₘₓₗ, zₑᵤ, κ, t_darkᴰ, bgc)
     eᶻ = growth_efficiency(eₘₐₓᶻ, σᶻ, gₚᶻ, g_Dᶻ, gₚₒᶻ, 0, Pᶠᵉ, Dᶠᵉ, SFe, P, D, POC, bgc)
     eᴹ = growth_efficiency(eₘₐₓᴹ, σᴹ, gₚᴹ, g_Dᴹ, gₚₒᴹ, g_Zᴹ,Pᶠᵉ, Dᶠᵉ, SFe, P, D, POC, bgc)
 
@@ -142,7 +142,10 @@ end
     Bact = bacterial_biomass(zₘₐₓ, z, Z, M)
 
     bFe = Fe #defined in previous PISCES model
-    sh = shear_rate(z, zₘₓₗ)
+    τ₀ = bgc.background_shear
+    τₘₓₗ = bgc.mixed_layer_shear
+
+    sh = shear(z, zₘₓₗ, τ₀, τₘₓₗ)
   
     Remin = oxic_remineralization(O₂, NO₃, PO₄, NH₄, DOC, T, bFe, Bact, bgc)
     Denit = denitrification(NO₃, PO₄, NH₄, DOC, O₂, T, bFe, Bact, bgc)
