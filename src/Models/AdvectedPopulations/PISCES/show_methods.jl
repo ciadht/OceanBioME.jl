@@ -1,4 +1,7 @@
-summary(::PISCES) = string("PISCES biogeochemical model") 
+using OceanBioME.Models.PISCESModel.Phytoplankton: MixedMondo
+using OceanBioME.Models.PISCESModel.Zooplankton: QualityDependantZooplankton
+
+summary(bgc::PISCES) = string("PISCES biogeochemical model ($(length(required_biogeochemical_tracers(bgc))-2) tracers)") # hack to exclude temp and salinity
 
 function show(io::IO, bgc::PISCES)
 
@@ -6,15 +9,9 @@ function show(io::IO, bgc::PISCES)
 
     output = "Pelagic Interactions Scheme for Carbon and Ecosystem Studies (PISCES) model {$FT}"
 
-    output *= "\n Nanophytoplankton: $(summary(bgc.nanophytoplankton))"
+    output *= "\n Phytoplankton: $(summary(bgc.phytoplankton))"
 
-    output *= "\n Diatoms: $(summary(bgc.diatoms))"
-
-    output *= "\n Microzooplankton: $(summary(bgc.microzooplankton))"
-
-    output *= "\n Mesozooplankton: $(summary(bgc.mesozooplankton))"
-
-    output *= "\n Microzooplankton: $(summary(bgc.microzooplankton))"
+    output *= "\n Zooplankton: $(summary(bgc.zooplankton))"
 
     output *= "\n Dissolved organic matter: $(summary(bgc.dissolved_organic_matter))"
 
@@ -30,9 +27,7 @@ function show(io::IO, bgc::PISCES)
 
     output *= "\n Phosphate: $(summary(bgc.phosphate))"
 
-    output *= "\n Calcite: $(summary(bgc.calcite))"
-
-    output *= "\n Carbon system: $(summary(bgc.carbon_system))"
+    output *= "\n Inorganic carbon: $(summary(bgc.inorganic_carbon))"
 
     output *= "\n Latitude: $(summary(bgc.latitude))"
 
@@ -55,46 +50,41 @@ function show(io::IO, bgc::PISCES)
     output *= "\n Sinking velocities:"
     output *= "\n  Small particles: $(summary(bgc.sinking_velocities.POC))"
     output *= "\n  Large particles: $(summary(bgc.sinking_velocities.GOC))"
-    
+
     print(io, output) 
 
     return nothing
 end
 
-function summary(phyto::MixedMondoPhytoplankton{<:Any, <:Any, FT}) where FT
-    growth_rate = summary(phyto.growth_rate)
-    nutrient_limitation = summary(phyto.nutrient_limitation)
+summary(phyto::NanoAndDiatoms{<:Any, <:Any, FT}) where FT =
+    string("NanoAndDiatoms{$(summary(phyto.nano)), $(summary(phyto.diatoms)), $FT} - $(required_biogeochemical_tracers(phyto))")
 
-    names = "\n  I (mmol C / m³), IChl (mg Chl / m³), IFe (μmol Fe / m³)"
+summary(phyto::NanoAndDiatoms{<:MixedMondo, <:MixedMondo, FT}) where FT =
+    string("MixedMondo-NanoAndDiatoms{$FT} - $(required_biogeochemical_tracers(phyto))")
 
-    if phyto.nutrient_limitation.silicate_limited
-        names *= ", ISi (mmol Si / m³)"
-    end
-    
-    return string("MixedMondoPhytoplankton{$(growth_rate), $(nutrient_limitation), $FT} - "*names)
-end
+summary(::MixedMondo) = string("MixedMondo")
 
-summary(::NutrientLimitedProduction) = string("NutrientLimitedProduction")
-summary(::GrowthRespirationLimitedProduction) = string("NutrientLimitedProduction")
+summary(zoo::MicroAndMeso{<:QualityDependantZooplankton, <:QualityDependantZooplankton, FT}) where FT =
+    string("QualityDependantZooplankton-MicroAndMeso{$FT} - $(required_biogeochemical_tracers(zoo))")
 
-summary(::NitrogenIronPhosphateSilicateLimitation) = string("NitrogenIronPhosphateSilicateLimitation")
+summary(zoo::MicroAndMeso{<:Any, <:Any, FT}) where FT =
+    string("MicroAndMeso {$(summary(zoo.micro)), $(summary(zoo.meso)), $FT} - $(required_biogeochemical_tracers(zoo))")
 
-summary(::Zooplankton{FT}) where FT = string("Zooplankton{$FT} - I (mmol C / m³)")
+summary(::QualityDependantZooplankton) = string("QualityDependantZooplankton")
 
-summary(::DissolvedOrganicMatter{FT}) where FT = string("DissolvedOrganicMatter{$FT} - DOC (mmol C / m³)")
-summary(::TwoCompartementParticulateOrganicMatter{FT}) where FT = 
-    string("TwoCompartementParticulateOrganicMatter{$FT} - 
-  POC (mmol C / m³), GOC (mmol C / m³), SFe (μmol Fe / m³), BFe (μmol Fe / m³), PSi (mmol Si / m³)")
+summary(::DissolvedOrganicCarbon{FT}) where FT = string("DissolvedOrganicCarbon{$FT} - DOC")
 
-summary(::NitrateAmmonia{FT}) where FT = string("NitrateAmmonia{$FT} - NO₃ (mmol N / m³), NH₄(mmol N / m³)")
-summary(::SimpleIron{FT}) where FT = string("SimpleIron{$FT} - Fe (μmol Fe / m³)")
+summary(pom::TwoCompartementCarbonIronParticles{FT}) where FT = 
+    string("TwoCompartementCarbonIronParticles{$FT} - $(required_biogeochemical_tracers(pom))")
+
+summary(::NitrateAmmonia{FT}) where FT = string("NitrateAmmonia{$FT} - (NO₃, NH₄)")
+summary(::SimpleIron{FT}) where FT = string("SimpleIron{$FT} - Fe")
 summary(::Oxygen{FT}) where FT = string("Oxygen{$FT} - O₂ (mmol O₂ / m³)")
-summary(::Silicate) = string("Silicate - Si (mmol Si / m³)")
-summary(::Phosphate) = string("Phosphate - PO₄ (mmol P / m³)")
-summary(::Calcite{FT}) where FT = string("Calcite{$FT} - CaCO₃ (mmol C / m³)")
-summary(::CarbonateSystem) = string("CarbonateSystem - DIC (mmol C / m³), Alk (mequiv / m³)")
+summary(::Silicate) = string("Silicate - Si")
+summary(::Phosphate) = string("Phosphate - PO₄")
+summary(::InorganicCarbon) = string("InorganicCarbon - (DIC, Alk)")
 
 summary(::ModelLatitude) = string("ModelLatitude")
-summary(lat::PrescribedLatitude{FT}) where FT = string("PrescribedLatitude $(lat.latitude)° {FT}")
+summary(lat::PrescribedLatitude{FT}) where FT = string("PrescribedLatitude{FT} $(lat.latitude)°")
 
 # TODO: add show methods

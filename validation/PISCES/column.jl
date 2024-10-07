@@ -58,8 +58,7 @@ biogeochemistry = PISCES(; grid,
                            mixed_layer_depth = zₘₓₗ,
                            mean_mixed_layer_vertical_diffusivity = ConstantField(1e-2), # this is by default computed now
                            surface_photosynthetically_active_radiation = PAR⁰,
-                           carbon_chemistry)#,
-                           #sinking_speeds = (POC = 2/day, GOC = 50/day))
+                           carbon_chemistry)
 
 CO₂_flux = CarbonDioxideGasExchangeBoundaryCondition(; carbon_chemistry)
 O₂_flux = OxygenGasExchangeBoundaryCondition()
@@ -68,6 +67,7 @@ O₂_flux = OxygenGasExchangeBoundaryCondition()
 model = HydrostaticFreeSurfaceModel(; grid,
                                       velocities = PrescribedVelocityFields(),
                                       tracer_advection = TracerAdvection(nothing, nothing, WENOFifthOrder(grid)),
+                                      momentum_advection = nothing,
                                       buoyancy = nothing,
                                       clock,
                                       closure = ScalarDiffusivity(VerticallyImplicitTimeDiscretization(), κ = κ_field),
@@ -77,19 +77,17 @@ model = HydrostaticFreeSurfaceModel(; grid,
 
 @info "Setting initial values..."
 
-
-set!(model, P = 6.95, D = 6.95, Z = 0.695,  M = 0.695, 
-            PChl = 0.35,  DChl = 0.35, 
-            PFe = 6.95*50e-3, DFe = 6.95*50e-3, 
-            DSi = 0.159*6.95, 
-            NO₃ = 6.202, NH₄ = 0.25*6.202, 
-            PO₄ = 0.8722, Fe = 0.2, Si = 2, 
-            CaCO₃ = 0.001,
-            DIC = 2139.0, Alk = 2366.0, 
-            O₂ = 237.0, S = 35, T = 10) 
+set!(model, P = 0.1, PChl = 0.025, PFe = 0.005,
+            D = 0.01, DChl = 0.003, DFe = 0.0006, DSi = 0.004,
+            Z = 0.06, M = 0.5,
+            DOC = 4, 
+            POC = 5.4, SFe = 0.34, 
+            GOC = 8.2, BFe = 0.5, PSi = 0.04, CaCO₃ = 10^-10,
+            NO₃ = 10, NH₄ = 0.1, PO₄ = 5.0, Fe = 0.6, Si = 8.6,
+            DIC = 2205, Alk = 2560, O₂ = 317, S = 35)
 
 # maybe get to 1.5hours after initial stuff
-simulation = Simulation(model, Δt = 1.5hours, stop_time = 10years)
+simulation = Simulation(model, Δt = 30minutes, stop_time = 5years)
 
 progress_message(sim) = @printf("Iteration: %04d, time: %s, Δt: %s, wall time: %s\n",
                                 iteration(sim),
@@ -100,38 +98,33 @@ progress_message(sim) = @printf("Iteration: %04d, time: %s, Δt: %s, wall time: 
 add_callback!(simulation, progress_message, TimeInterval(10day))
 
 # prescribe the temperature
+using KernelAbstractions: @index, @kernel
+using Oceananigans.Architectures: architecture
+using Oceananigans.Grids: znode, Center
+using Oceananigans.Utils: launch!
+
+@kernel function fill_T!(T, grid, temp, t)
+    i, j, k = @index(Global, NTuple)
+
+    z = znode(i, j, k, grid, Center(), Center(), Center())
+
+    @inbounds T[i, j, k] = temp(z, t)
+
+end
 function update_temperature!(simulation)
     t = time(simulation)
 
-    T = reshape(map(z -> temp(z, t), znodes(simulation.model.grid, Center())), (1, 1, size(grid, 3)))
-
-    set!(simulation.model.tracers.T, T)
+    launch!(architecture(grid), grid, :xyz, fill_T!, model.tracers.T, grid, temp, t)
 
     return nothing
 end
 
 add_callback!(simulation, update_temperature!, IterationInterval(1))
 
-#NaN Checker function. Could be removed to improve speed, if confident of model stability
-function non_zero_fields!(model) 
-    @inbounds for (idx, tracer) in enumerate(model.tracers)
-        for i in 1:50
-            if isnan(tracer[1,1,i])
-                throw("$(keys(model.tracers)[idx]) has gone NaN")
-            else
-                tracer[1, 1, i] = max(0, tracer[1, 1, i])
-            end
-        end
-        
-    end
-    return nothing
-end
-
-simulation.callbacks[:non_zero_fields] = Callback(non_zero_fields!, callsite = UpdateStateCallsite())
 filename = "column"
 simulation.output_writers[:tracers] = JLD2OutputWriter(model, model.tracers,
                                                        filename = "$filename.jld2",
-                                                       schedule = TimeInterval(1day),
+                                                       schedule = TimeInterval(3day),
                                                        overwrite_existing = true)
 
 PAR = Field(Oceananigans.Biogeochemistry.biogeochemical_auxiliary_fields(biogeochemistry.light_attenuation).PAR)
@@ -143,7 +136,7 @@ internal_fields = (; biogeochemistry.underlying_biogeochemistry.calcite_saturati
 
 simulation.output_writers[:internals] = JLD2OutputWriter(model, internal_fields,
                                                        filename = "$(filename)_internal_fields.jld2",
-                                                       schedule = TimeInterval(1day),
+                                                       schedule = TimeInterval(3day),
                                                        overwrite_existing = true)
 # ## Run!
 # We are ready to run the simulation
@@ -168,8 +161,9 @@ carbon_export = zeros(length(times))
 S = ConstantField(35)
 
 using Oceananigans.Biogeochemistry: biogeochemical_drift_velocity
+using CUDA
 
-for (n, t) in enumerate(times)
+CUDA.@allowscalar for (n, t) in enumerate(times)
     clock.time = t
 
     k_export = floor(Int, grid.Nz + MLD(t)/minimum_zspacing(grid))
@@ -187,9 +181,9 @@ using CairoMakie
 fig = Figure(size = (4000, 2100), fontsize = 20);
 
 start_day = 366
-end_day   = 3651
+end_day   = length(times)
 
-axis_kwargs = (xlabel = "Time (days)", ylabel = "z (m)", limits = ((start_day, times[end_day] / days), (-200, 0)))
+axis_kwargs = (xlabel = "Time (days)", ylabel = "z (m)", limits = ((times[start_day], times[end_day]) ./ days, (-200, 0)))
 
 for (n, name) in enumerate(keys(model.tracers))
     if !(name == :S)
@@ -203,8 +197,8 @@ for (n, name) in enumerate(keys(model.tracers))
     end
 end
 
-ax = Axis(fig[7, 3]; title = "log₁₀((Calcite saturation)", axis_kwargs...)
-hm = heatmap!(ax, times[start_day:end_day]./days, z, log10.(interior(internal_fields["calcite_saturation"], 1, 1, :, start_day:end_day)'), colorrange = (-173, -95))
+ax = Axis(fig[7, 3]; title = "log₁₀(Calcite saturation)", axis_kwargs...)
+hm = heatmap!(ax, times[start_day:end_day]./days, z, log10.(interior(internal_fields["calcite_saturation"], 1, 1, :, start_day:end_day)'))
 Colorbar(fig[7, 4], hm)
 
 ax = Axis(fig[7, 5]; title = "log₁₀(PAR)", axis_kwargs...)
@@ -214,16 +208,10 @@ Colorbar(fig[7, 6], hm)
 CO₂_molar_mass = (12 + 2 * 16) * 1e-3 # kg / mol
 
 axDIC = Axis(fig[7, 7], xlabel = "Time (days)", ylabel = "Flux (kgCO₂/m²/year)",
-                         title = "Air-sea CO₂ flux and Sinking", limits = ((0, times[end] / days), nothing))
+                         title = "Air-sea CO₂ flux and Sinking", limits = ((times[start_day], times[end_day]) ./ days, nothing))
 
 lines!(axDIC, times[start_day:end_day] / days, air_sea_CO₂_flux[start_day:end_day] / 1e3 * CO₂_molar_mass * year, linewidth = 3, label = "Air-sea flux")
 lines!(axDIC, times[start_day:end_day] / days, carbon_export[start_day:end_day] / 1e3    * CO₂_molar_mass * year, linewidth = 3, label = "Sinking below mixed layer")
 Legend(fig[7, 8], axDIC, framevisible = false)
 
 fig
-
-
-# TODO:
-# - aggregation
-# - check flux feeding
-# - Si looks like its erroniously growing
