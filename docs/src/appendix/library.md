@@ -5,54 +5,96 @@ Documenting the user interface.
 ## OceanBioME.jl
 ```@autodocs
 Modules = [OceanBioME]
-private = false
 ```
 
 ## Biogeochemical Models
 
-### Nutrient Phytoplankton Zooplankton Detritus
+### Nutrient Phytoplankton Zooplankton Detritus (NPZD)
 
 ```@autodocs
-Modules = [OceanBioME.NPZDModel]
-private = false
+Modules = [OceanBioME.Models.NPZDModel]
 ```
 
 ### The Lodyc-DAMTP Ocean Biogeochemical Simulation Tools for Ecosystem and Resources (LOBSTER)
 
 ```@autodocs
-Modules = [OceanBioME.LOBSTERModel]
-private = true
+Modules = [OceanBioME.Models.LOBSTERModel]
+```
+
+### Pelagic Interactions Scheme for Carbon and Ecosystem Studies (PISCES)
+
+```@autodocs
+Modules = [OceanBioME.Models.PISCESModel]
+```
+
+```@autodocs
+Modules = [OceanBioME.Models.PISCESModel.DissolvedOrganicMatter]
+```
+
+```@autodocs
+Modules = [OceanBioME.Models.PISCESModel.ParticulateOrganicMatter]
+```
+
+```@autodocs
+Modules = [OceanBioME.Models.PISCESModel.Iron]
+```
+
+```@autodocs
+Modules = [OceanBioME.Models.PISCESModel.InorganicCarbons]
+```
+
+```@autodocs
+Modules = [OceanBioME.Models.PISCESModel.Zooplankton]
+```
+
+```@autodocs
+Modules = [OceanBioME.Models.PISCESModel.Phytoplankton]
+```
+
+```@autodocs
+Modules = [OceanBioME.Models.PISCESModel.Phosphates]
+```
+
+```@autodocs
+Modules = [OceanBioME.Models.PISCESModel.Silicates]
+```
+
+```@autodocs
+Modules = [OceanBioME.Models.PISCESModel.Nitrogen]
 ```
 
 ### Sugar kelp (Saccharina latissima)
 
 ```@autodocs
-Modules = [OceanBioME.SLatissimaModel]
-private = true
+Modules = [OceanBioME.Models.SLatissimaModel]
+```
+
+### Carbon Chemistry 
+
+```@autodocs
+Modules = [OceanBioME.Models.CarbonChemistryModel]
 ```
 
 ## Light Attenuation Models
 
 ```@autodocs
 Modules = [OceanBioME.Light]
-private = false
 ```
 
-## Boundary Conditions
+## Sediments
 
 ```@autodocs
-Modules = [OceanBioME.Boundaries]
-private = false
+Modules = [OceanBioME.Models.Sediments]
 ```
 
+## Gas exchange boundary conditions
+
 ```@autodocs
-Modules = [OceanBioME.Boundaries.Sediments]
-private = false
+Modules = [OceanBioME.Models.GasExchangeModel, OceanBioME.Models.GasExchangeModel.ScaledGasTransferVelocity]
 ```
 
 ## Box Model
 
 ```@autodocs
 Modules = [OceanBioME.BoxModels]
-private = false
 ```

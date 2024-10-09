@@ -13,14 +13,16 @@ using Oceananigans.Biogeochemistry:
         update_biogeochemical_state!
 
 using Oceananigans.Fields: CenterField
+using Oceananigans.Grids: RectilinearGrid, Flat
 using Oceananigans.TimeSteppers: tick!, TimeStepper
+using Oceananigans: UpdateStateCallsite, TendencyCallsite
 
 using OceanBioME: BoxModelGrid
-using StructArrays, JLD2
+using JLD2
 
 import Oceananigans.Simulations: run!
-import Oceananigans: set!
-import Oceananigans.Fields: regularize_field_boundary_conditions, TracerFields
+import Oceananigans: set!, fields
+import Oceananigans.Fields: regularize_field_boundary_conditions, TracerFields, interpolate
 import Oceananigans.Architectures: architecture
 import Oceananigans.Models: default_nan_checker, iteration, AbstractModel, prognostic_fields
 import Oceananigans.TimeSteppers: update_state!
@@ -46,7 +48,7 @@ end
                forcing = NamedTuple(),
                timestepper = :RungeKutta3,
                clock = Clock(; time = 0.0),
-               prescribed_tracers = (:T, ))
+               prescribed_tracers::PT = NamedTuple())
 
 Constructs a box model of a `biogeochemistry` model. Once this has been constructed you can set initial condiitons by `set!(model, X=1.0...)`.
 
@@ -57,14 +59,14 @@ Keyword Arguments
 - `forcing`: NamedTuple of additional forcing functions for the biogeochemical tracers to be integrated
 - `timestepper`: Timestepper to integrate model
 - `clock`: Oceananigans clock to keep track of time
-- `prescribed_tracers`: Tuple of fields names (Symbols) which are not integrated but provided in `forcing` as a function of time with signature `f(t)`
+- `prescribed_tracers`: named tuple of tracer names and function (`f(t)`) prescribing tracer values
 """
 function BoxModel(; biogeochemistry::B,
                     grid = BoxModelGrid(),
                     forcing = NamedTuple(),
                     timestepper = :RungeKutta3,
                     clock::C = Clock(; time = 0.0),
-                    prescribed_tracers::PT = (T = (t) -> 0, )) where {B, C, PT}
+                    prescribed_tracers::PT = NamedTuple()) where {B, C, PT}
 
     variables = required_biogeochemical_tracers(biogeochemistry)
     fields = NamedTuple{variables}([CenterField(grid) for var in eachindex(variables)])
@@ -84,9 +86,9 @@ end
 function update_state!(model::BoxModel, callbacks=[]; compute_tendencies = true)
     t = model.clock.time
 
-    for field in model.prescribed_tracers 
-        if field in keys(model.fields)
-            @inbounds model.fields[field][1, 1, 1] = @inbounds model.forcing[field](t)
+    for (name, forcing) in pairs(model.prescribed_tracers)
+        if name in keys(model.fields)
+            @inbounds model.fields[name][1, 1, 1] = @inbounds forcing(t)
         end
     end
 
@@ -106,7 +108,9 @@ architecture(model::BoxModel) = architecture(model.grid) # this might be the def
 default_nan_checker(::BoxModel) = nothing
 iteration(model::BoxModel) = model.clock.iteration
 prognostic_fields(model::BoxModel) = @inbounds model.fields[required_biogeochemical_tracers(model.biogeochemistry)]
+fields(model::BoxModel) = model.fields
 
+interpolate(at_node, from_field, from_loc, from_grid::RectilinearGrid{<:Any, Flat, Flat, Flat}) = @inbounds from_field[1, 1, 1]
 
 """
     set!(model::BoxModel; kwargs...)

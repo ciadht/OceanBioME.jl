@@ -1,7 +1,9 @@
 using Oceananigans.Architectures: device
-using Oceananigans.Biogeochemistry: update_tendencies!, biogeochemical_auxiliary_fields
+using Oceananigans.Biogeochemistry: update_tendencies!, biogeochemical_auxiliary_fields, AbstractBiogeochemistry, AbstractContinuousFormBiogeochemistry
+using Oceananigans.Grids: nodes, Center
 using Oceananigans.TimeSteppers: rk3_substep_field!, store_field_tendencies!, RungeKutta3TimeStepper, QuasiAdamsBashforth2TimeStepper
 using Oceananigans.Utils: work_layout, launch!
+using Oceananigans: TendencyCallsite
 
 import Oceananigans.TimeSteppers: rk3_substep!, store_tendencies!, compute_tendencies!
 
@@ -39,7 +41,7 @@ function compute_tendencies!(model::BoxModel, callbacks)
     for tracer in required_biogeochemical_tracers(model.biogeochemistry)
         forcing = @inbounds model.forcing[tracer]
         
-        @inbounds Gⁿ[tracer][1, 1, 1] = tracer_tendency(Val(tracer), model.biogeochemistry, forcing, model.clock.time, model.field_values)
+        @inbounds Gⁿ[tracer][1, 1, 1] = tracer_tendency(Val(tracer), model.biogeochemistry, forcing, model.clock, model.fields, model.field_values, model.grid)
     end
 
     for callback in callbacks
@@ -51,10 +53,15 @@ function compute_tendencies!(model::BoxModel, callbacks)
     return nothing
 end
 
-@inline tracer_tendency(val_name, biogeochemistry, forcing, time, model_fields) =
-    biogeochemistry(val_name, 0, 0, 0, time, model_fields...) + forcing(time, model_fields...)
+@inline boxmodel_xyz(nodes, grid) = map(n->boxmodel_coordinate(n, grid), nodes)
+@inline boxmodel_coordinate(::Nothing, grid) = zero(grid)
+@inline boxmodel_coordinate(nodes, grid) = @inbounds nodes[1]
 
-@inline tracer_tendency(::Val{:T}, biogeochemistry, forcing, time, model_fields) = 0
+@inline tracer_tendency(val_name, biogeochemistry::AbstractContinuousFormBiogeochemistry, forcing, clock, model_fields, model_field_values, grid) =
+    biogeochemistry(val_name, boxmodel_xyz(nodes(grid, Center(), Center(), Center()), grid)..., clock.time, model_field_values...) + forcing(time, model_fields...)
+
+@inline tracer_tendency(val_name, biogeochemistry::AbstractBiogeochemistry, forcing, clock, model_fields, model_field_values, grid) =
+    biogeochemistry(1, 1, 1, grid, val_name, clock, model_fields) + forcing(clock, model_fields)
 
 function rk3_substep!(model::BoxModel, Δt, γⁿ, ζⁿ)
     model_fields = prognostic_fields(model)
